@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <ApplicationIcon>cdf8823c90762ffe9e24b4904a9b82c9_256x256.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="cdf8823c90762ffe9e24b4904a9b82c9_256x256.ico" />
+  </ItemGroup>
+
+</Project>
