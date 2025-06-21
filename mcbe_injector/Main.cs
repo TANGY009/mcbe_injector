@@ -208,19 +208,20 @@ public static class Injector
 ");
         }
 
-        string[] dllFiles = ReadDllListFromConfig(configFile);
+        // 合并 injectlist.txt 内的和 dlls 目录下的 DLL 路径，去重
+        string[] configDlls = ReadDllListFromConfig(configFile);
 
-        if (dllFiles.Length == 0)
-        {
-            string dllDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dlls");
-            if (!Directory.Exists(dllDir))
-            {
-                Directory.CreateDirectory(dllDir);
-            }
-            dllFiles = Directory.GetFiles(dllDir, "*.dll", SearchOption.AllDirectories);
-        }
+        string dllDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dlls");
+        string[] dirDlls = Directory.Exists(dllDir)
+            ? Directory.GetFiles(dllDir, "*.dll", SearchOption.AllDirectories)
+            : Array.Empty<string>();
 
-        // No DLL found, just exit quietly
+        // 合并去重，全部注入
+        string[] dllFiles = configDlls.Concat(dirDlls)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        // 没有找到dll，直接退出
         if (dllFiles.Length == 0)
         {
             return 0;
@@ -321,6 +322,7 @@ public static class Injector
         }
         return InjectionResult.Success;
     }
+
     private sealed class SafeProcessHandle : IDisposable
     {
         private IntPtr handle;
