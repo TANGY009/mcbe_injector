@@ -75,6 +75,38 @@ public static class Injector
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern int MessageBox(IntPtr hWnd, String text, String caption, uint type);
 
+    /// <summary>
+    /// Read DLL list from config file, supports relative/absolute path, ignores comments and empty lines.
+    /// </summary>
+    public static string[] ReadDllListFromConfig(string configFile)
+    {
+        if (!File.Exists(configFile))
+            return Array.Empty<string>();
+        var lines = File.ReadAllLines(configFile)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("#"))
+            .ToArray();
+
+        var result = lines
+            .Select(path =>
+            {
+                try { return Path.GetFullPath(path); }
+                catch { return null; }
+            })
+            .Where(p => !string.IsNullOrEmpty(p) && File.Exists(p))
+            .ToArray();
+
+        var notFound = lines.Where(p =>
+        {
+            try { return !File.Exists(Path.GetFullPath(p)); }
+            catch { return true; }
+        });
+        foreach (var nf in notFound)
+            Console.WriteLine($"[WARN] Config DLL not found: {nf}");
+
+        return result;
+    }
+
     public static void LaunchMinecraftUWP()
     {
         var runningProcs = Process.GetProcessesByName(MinecraftProcessName);
@@ -116,7 +148,7 @@ public static class Injector
 
     public static int Main(string[] args)
     {
-        // 询问用户是否关闭正在运行的Minecraft
+        // Prompt user to kill running Minecraft
         var runningProcs = Process.GetProcessesByName(MinecraftProcessName);
         if (runningProcs.Any())
         {
@@ -160,19 +192,40 @@ public static class Injector
             return (int)InjectionResult.ProcessNotFound;
         }
 
-        string dllDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dlls");
+        // --- Begin: Config file creation and logic ---
+        string configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "injectlist.txt");
 
-        if (!Directory.Exists(dllDir))
+        if (!File.Exists(configFile))
         {
-            Directory.CreateDirectory(dllDir);
+            File.WriteAllText(configFile,
+@"# DLL injection list
+# Write one dll path per line, absolute or relative to this exe
+# Support # comment lines
+# Example:
+# dlls\YourDll1.dll
+# dlls\Subfolder\Other.dll
+# C:\AbsolutePath\Another.dll
+");
         }
 
-        var dllFiles = Directory.GetFiles(dllDir, "*.dll", SearchOption.AllDirectories);
+        string[] dllFiles = ReadDllListFromConfig(configFile);
 
         if (dllFiles.Length == 0)
         {
-            return (int)InjectionResult.GetFullPathNameWFailed;
+            string dllDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dlls");
+            if (!Directory.Exists(dllDir))
+            {
+                Directory.CreateDirectory(dllDir);
+            }
+            dllFiles = Directory.GetFiles(dllDir, "*.dll", SearchOption.AllDirectories);
         }
+
+        // No DLL found, just exit quietly
+        if (dllFiles.Length == 0)
+        {
+            return 0;
+        }
+        // --- End: Config file creation and logic ---
 
         int success = 0;
         foreach (var dll in dllFiles)
@@ -224,6 +277,7 @@ public static class Injector
             return InjectionResult.SetNamedSecurityInfoWFailed;
         }
 
+        // Prevent duplicate injection
         foreach (ProcessModule module in targetProcess.Modules)
         {
             if (string.Equals(module.FileName, fullDllPath, StringComparison.OrdinalIgnoreCase))
