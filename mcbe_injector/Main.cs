@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -41,7 +41,7 @@ public static class Injector
     }
 
     private const string Kernel32 = "kernel32.dll";
-    private const string MinecraftAppUserModelId = "Microsoft.MinecraftUWP_8wekyb3d8bbwe!App";
+    private const string MinecraftAppUserModelId = "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe!App";
     private const string MinecraftProcessName = "Minecraft.Windows";
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -74,38 +74,6 @@ public static class Injector
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern int MessageBox(IntPtr hWnd, String text, String caption, uint type);
-
-    /// <summary>
-    /// Read DLL list from config file, supports relative/absolute path, ignores comments and empty lines.
-    /// </summary>
-    public static string[] ReadDllListFromConfig(string configFile)
-    {
-        if (!File.Exists(configFile))
-            return Array.Empty<string>();
-        var lines = File.ReadAllLines(configFile)
-            .Select(line => line.Trim())
-            .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("#"))
-            .ToArray();
-
-        var result = lines
-            .Select(path =>
-            {
-                try { return Path.GetFullPath(path); }
-                catch { return null; }
-            })
-            .Where(p => !string.IsNullOrEmpty(p) && File.Exists(p))
-            .ToArray();
-
-        var notFound = lines.Where(p =>
-        {
-            try { return !File.Exists(Path.GetFullPath(p)); }
-            catch { return true; }
-        });
-        foreach (var nf in notFound)
-            Console.WriteLine($"[WARN] Config DLL not found: {nf}");
-
-        return result;
-    }
 
     public static void LaunchMinecraftUWP()
     {
@@ -148,7 +116,7 @@ public static class Injector
 
     public static int Main(string[] args)
     {
-        // Prompt user to kill running Minecraft
+        // 询问用户是否关闭正在运行的Minecraft
         var runningProcs = Process.GetProcessesByName(MinecraftProcessName);
         if (runningProcs.Any())
         {
@@ -192,41 +160,19 @@ public static class Injector
             return (int)InjectionResult.ProcessNotFound;
         }
 
-        // --- Begin: Config file creation and logic ---
-        string configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "injectlist.txt");
+        string dllDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dlls");
 
-        if (!File.Exists(configFile))
+        if (!Directory.Exists(dllDir))
         {
-            File.WriteAllText(configFile,
-@"# DLL injection list
-# Write one dll path per line, absolute or relative to this exe
-# Support # comment lines
-# Example:
-# dlls\YourDll1.dll
-# dlls\Subfolder\Other.dll
-# C:\AbsolutePath\Another.dll
-");
+            Directory.CreateDirectory(dllDir);
         }
 
-        // 合并 injectlist.txt 内的和 dlls 目录下的 DLL 路径，去重
-        string[] configDlls = ReadDllListFromConfig(configFile);
+        var dllFiles = Directory.GetFiles(dllDir, "*.dll", SearchOption.AllDirectories);
 
-        string dllDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dlls");
-        string[] dirDlls = Directory.Exists(dllDir)
-            ? Directory.GetFiles(dllDir, "*.dll", SearchOption.AllDirectories)
-            : Array.Empty<string>();
-
-        // 合并去重，全部注入
-        string[] dllFiles = configDlls.Concat(dirDlls)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        // 没有找到dll，直接退出
         if (dllFiles.Length == 0)
         {
-            return 0;
+            return (int)InjectionResult.GetFullPathNameWFailed;
         }
-        // --- End: Config file creation and logic ---
 
         int success = 0;
         foreach (var dll in dllFiles)
@@ -278,7 +224,6 @@ public static class Injector
             return InjectionResult.SetNamedSecurityInfoWFailed;
         }
 
-        // Prevent duplicate injection
         foreach (ProcessModule module in targetProcess.Modules)
         {
             if (string.Equals(module.FileName, fullDllPath, StringComparison.OrdinalIgnoreCase))
@@ -322,7 +267,6 @@ public static class Injector
         }
         return InjectionResult.Success;
     }
-
     private sealed class SafeProcessHandle : IDisposable
     {
         private IntPtr handle;
